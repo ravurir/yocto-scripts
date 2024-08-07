@@ -115,7 +115,8 @@ def main(prNumber, access_token, repo_string):
                 return
 
             # GitHub API endpoint for retrieving files from PR_Check repository
-            pr_check_base_url = f"https://api.github.com/repos/suchetla/PR_Check/contents/LICENSES/{repo_name}/"
+            # pr_check_base_url = f"https://api.github.com/repos/suchetla/PR_Check/contents/LICENSES/{repo_name}/"
+            pr_check_base_url = f"https://api.github.com/repos/Xilinx/yocto-scripts/contents/LICENSES/{repo_name}?ref=kria-apps"
             pr_check_response = requests.get(pr_check_base_url, headers=headers)
 
             if pr_check_response.status_code == 200:
