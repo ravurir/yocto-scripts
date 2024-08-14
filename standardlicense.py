@@ -34,48 +34,41 @@ def preprocess_content(content):
 
     return processed_script
 
-def main(prNumber, access_token, repo_string):
+def get_files_url(repo_full_name, pr_number):
+    return f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/files"
+
+def main(prNumber, access_token, base_repo_string):
     print("LICENSE CHECKS: ")
 
-    # Extract the repo name from the full repo string
-    repo_name = repo_string.split('/')[-1]
-
-    # Replace with your GitHub token
+    # Extract base repo and PR number
+    base_repo_full_name = base_repo_string  # The base repository where the PR is raised
     github_token = access_token
-
-    # Replace with the pull request number you're interested in
     pull_request_number = prNumber
 
     # GitHub API endpoint for retrieving pull request details
-    pr_url = f"https://api.github.com/repos/{repo_string}/pulls/{pull_request_number}"
-
-    # Add your GitHub token to the headers for authentication
+    pr_url = f"https://api.github.com/repos/{base_repo_full_name}/pulls/{pull_request_number}"
     headers = {"Authorization": f"token {github_token}"}
 
-    # Send a GET request to the GitHub API endpoint to get the pull request details
+    # Retrieve PR details
     pr_response = requests.get(pr_url, headers=headers)
-
     if pr_response.status_code == 200:
         pr_data = pr_response.json()
         pr_head_ref = pr_data['head']['ref']
+        pr_head_repo_full_name = pr_data['head']['repo']['full_name']  # Get forked repo info
 
-        # GitHub API endpoint for retrieving files modified or added in a pull request
-        files_url = f"https://api.github.com/repos/{repo_string}/pulls/{pull_request_number}/files"
+        # Use the base repository for retrieving files
+        files_url = get_files_url(base_repo_full_name, pull_request_number)
         files_response = requests.get(files_url, headers=headers)
 
         if files_response.status_code == 200:
             files = files_response.json()
-
-            # print("Files retrieved from the PR:")
-            # for file in files:
-            #     print(f"- {file['filename']} (status: {file['status']})")
 
             # Store processed content of modified and added files
             modified_contents = {}
             added_contents = {}
 
             # Extensions to exclude from processing
-            excluded_extensions = {'.json', '.xml', '.yml', '.yaml','.hcl'}
+            excluded_extensions = {'.json', '.xml', '.yml', '.yaml', '.hcl'}
 
             # Retrieve and process content of modified and added files from raw_url
             for file_info in files:
@@ -114,8 +107,8 @@ def main(prNumber, access_token, repo_string):
             if not modified_contents and not added_contents:
                 return
 
-            # GitHub API endpoint for retrieving files from PR_Check repository
-            # pr_check_base_url = f"https://api.github.com/repos/suchetla/PR_Check/contents/LICENSES/{repo_name}/"
+            # Modify base_repo_full_name to extract the repo name correctly
+            repo_name = base_repo_full_name.split('/')[1]  # Extracts the repo name (e.g., 'kria-dashboard')
             pr_check_base_url = f"https://api.github.com/repos/Xilinx/yocto-scripts/contents/LICENSES/{repo_name}?ref=kria-apps"
             pr_check_response = requests.get(pr_check_base_url, headers=headers)
 
@@ -135,13 +128,8 @@ def main(prNumber, access_token, repo_string):
                     matched = False  # Flag to track if the modified file matches with any existing file
 
                     # Retrieve old content from the source repo using the full file path and branch
-                    source_file_url = f"https://api.github.com/repos/{repo_string}/contents/{modified_file_name}?ref={pr_head_ref}"
+                    source_file_url = f"https://api.github.com/repos/{pr_head_repo_full_name}/contents/{modified_file_name}?ref={pr_head_ref}"
                     source_file_response = requests.get(source_file_url, headers=headers)
-
-                    # Debugging output
-                    # print(f"Requesting old content for {modified_file_name}: {source_file_url}")
-                    # print(f"Response status code: {source_file_response.status_code}")
-                    # print(f"Response content: {source_file_response.text}")
 
                     if source_file_response.status_code == 200:
                         source_file_content_base64 = source_file_response.json().get('content', '')
@@ -220,23 +208,31 @@ def main(prNumber, access_token, repo_string):
                         added_files_valid_license = False
                         pr_approved = False  # Mark PR as not approved if any added file has no valid license
 
-                # Final check to print the appropriate message
-                if pr_approved and (license_check_passed or added_files_valid_license):
-                    if modified_files_checked and not license_check_passed:
-                        print("License Check is Passed")
+                # Final check to print the overall result
+                if not license_check_passed:
+                    if pr_approved:
+                        print("License Check Passed")
                     else:
-                        print("This is the Approved License. Hence, License Check is Passed")
+                        print("License Check Failed")
                 else:
-                    if len(modified_contents) > 1:
-                        print("Found one or more licenses which are not approved.")
-                    print("License Check is Failed, please reach out to maintainer")
+                    print("License Check is Passed")
 
             else:
-                print("Failed to retrieve files from the repositories.")
+                print(f"Failed to retrieve LICENSES content from Xilinx/yocto-scripts repository: {pr_check_response.text}")
+
         else:
             print(f"Failed to retrieve files from the pull request: {files_response.text}")
+
     else:
         print(f"Failed to retrieve pull request details: {pr_response.text}")
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], sys.argv[3])
+    if len(sys.argv) != 4:
+        print("Usage: python3 standardlicense.py <PR_NUMBER> <GITHUB_TOKEN> <BASE_REPO>")
+        sys.exit(1)
+
+    prNumber = sys.argv[1]
+    access_token = sys.argv[2]
+    base_repo_string = sys.argv[3]
+
+    main(prNumber, access_token, base_repo_string)
